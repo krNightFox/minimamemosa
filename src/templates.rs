@@ -176,7 +176,7 @@ const BASE_TEMPLATE: &str = r#"<!DOCTYPE html>
             --a900: oklch(0.89 0.05 75);
         }
         body { font-family: 'Raleway', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif; font-weight: 400; }
-        .memo-content { font-weight: 400; }
+        .memo-content { font-weight: 400; word-break: break-word; overflow-wrap: anywhere; hyphens: auto; }
         .memo-content h1 { font-size: 1.375rem; font-weight: 600; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.25rem; }
         .memo-content h2 { font-size: 1.1875rem; font-weight: 600; margin-bottom: 0.5rem; }
         .memo-content h3 { font-size: 1.0625rem; font-weight: 600; margin-bottom: 0.25rem; }

@@ -37,6 +37,26 @@ test.describe('Notes & UI Flows', () => {
     await expect(page.locator('#timeline').getByText('Hello from E2E test')).toBeVisible();
   });
 
+  test('should wrap extremely long words without overflowing', async ({ page }) => {
+    const longWord = 'a'.repeat(150);
+    await createNote(page, longWord);
+
+    const memoContent = page.locator('#timeline [id^="memo-"] .memo-content').first();
+    await expect(memoContent).toBeVisible();
+    await expect(memoContent).toContainText(longWord);
+    
+    // Check if the appropriate CSS properties are applied to handle long words
+    await expect(memoContent).toHaveCSS('overflow-wrap', 'anywhere');
+    await expect(memoContent).toHaveCSS('word-break', 'break-word');
+    
+    // Check bounding box to ensure it doesn't exceed the timeline width significantly
+    const timeline = page.locator('#timeline');
+    const timelineBox = await timeline.boundingBox();
+    const contentBox = await memoContent.boundingBox();
+    
+    expect(contentBox!.width).toBeLessThanOrEqual(timelineBox!.width);
+  });
+
   test('should create a note with tags', async ({ page }) => {
     await createNote(page, 'This note has #rust and #testing tags');
     await expect(page.locator('#timeline').getByText('note has')).toBeVisible();

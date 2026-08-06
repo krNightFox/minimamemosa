@@ -520,4 +520,53 @@ test.describe('Notes & UI Flows', () => {
       expect(content2).toContain('<p>Text Below</p>');
     }
   });
+
+  test('should open slash menu when editing a filtered note', async ({ page }) => {
+    // 1. Create a note with specific content
+    const noteTitle = 'Filtered Note for Slash Command Test';
+    await createNote(page, noteTitle);
+
+    // 2. Click the notes panel to ensure sidebar is visible
+    await page.click('#icon-notes');
+    await page.waitForURL(/\/app\/?$/);
+
+    // 3. Search for the note in the sidebar
+    const searchInput = page.locator('#sidebar-search-input');
+    await expect(searchInput).toBeVisible();
+    await searchInput.fill('Slash Command Test');
+
+    // 4. Wait for the note to appear in the sidebar
+    const sidebarNote = page.locator(`#unified-sidebar-content div[data-title="${noteTitle}"]`);
+    await expect(sidebarNote).toBeVisible();
+    await sidebarNote.click();
+
+    // 5. Wait for the note detail to open in the timeline
+    const timelineNote = page.locator('#timeline [id^="memo-"]').first();
+    await expect(timelineNote).toBeVisible();
+    await expect(timelineNote.locator('.memo-content')).toContainText(noteTitle);
+
+    // 6. Click edit on the note
+    await timelineNote.hover();
+    await timelineNote.locator('button[onclick*="editMemo"]').click();
+
+    // 7. Wait for the edit form and Tiptap to initialize
+    await page.waitForFunction(() => {
+      const ef = document.querySelector('[id^="memo-edit-form-"]');
+      return ef && getComputedStyle(ef).display !== 'none';
+    });
+    await waitForTiptap(page);
+
+    // 8. Type slash inside the edit form
+    const editEditor = page.locator('.memo-edit .ProseMirror').first();
+    await editEditor.focus();
+    // Press End to go to the end of the line
+    await page.keyboard.press('End');
+    // Add a space and a slash
+    await page.keyboard.type(' /');
+
+    // 9. Verify slash menu opens
+    const slashMenu = page.locator('#slash-menu');
+    await expect(slashMenu).toBeVisible();
+    await expect(slashMenu.locator('button').first()).toBeVisible();
+  });
 });

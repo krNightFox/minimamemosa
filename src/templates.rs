@@ -301,6 +301,8 @@ const BASE_TEMPLATE: &str = r#"<!DOCTYPE html>
     <button type="button" onclick="setImageWidth('50%')" class="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-foreground hover:bg-muted transition-colors">Half Width</button>
     <button type="button" onclick="setImageWidth('100%')" class="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-foreground hover:bg-muted transition-colors">Full Width</button>
 </div>
+<!-- Slash Commands Dropdown -->
+<div id="slash-menu" class="hidden bg-card border border-border rounded-lg shadow-lg py-1 min-w-[260px] z-50"></div>
 
 <!-- Share Modal -->
 <div id="share-modal" class="fixed inset-0 z-[9999] flex items-center justify-center hidden" style="background:rgba(0,0,0,0.5)">
@@ -816,8 +818,6 @@ const TIMELINE_TEMPLATE: &str = r##"{% extends "base" %}
                                        <input type="hidden" name="content" id="memo-editor-input" value="">
 <p class="text-xs text-muted-fg text-center mt-2 select-none">Use <kbd class="px-1 py-0.5 bg-muted border border-border rounded text-[10px] font-mono">/</kbd> slash commands or markdown syntax to format</p>
                                     </div>
-                                    <!-- Slash Commands Dropdown -->
-                                   <div id="slash-menu" class="hidden bg-card border border-border rounded-lg shadow-lg py-1 min-w-[260px] z-50"></div>
                                    <input type="file" id="image-upload-input" accept="image/*" multiple class="hidden" onchange="uploadFilesForEditor(this.files);this.value=''">
                                   <input type="file" id="file-upload-input" accept="*/*" multiple class="hidden" onchange="uploadFilesForEditor(this.files);this.value=''">
                                      <div class="flex items-center justify-between px-3 sm:px-4 lg:px-8 py-2 lg:py-3 border-t border-border bg-muted dark:bg-muted rounded-b-lg">
@@ -1373,7 +1373,7 @@ var debouncedLinkSearch = debounce(function(q) { searchLinkMemos(q) }, 200);
         document.getElementById('memo-editor-input').value = getTiptapMarkdown();
     }
     function checkSlashCommand(el) {
-        var text = getEditorText();
+        var text = getEditorText(el);
         var cursor = getTextOffset(el);
         var before = text.substring(0, cursor);
         var match = before.match(/(^|\s)\/([a-z]*)$/i);
@@ -1433,8 +1433,12 @@ var debouncedLinkSearch = debounce(function(q) { searchLinkMemos(q) }, 200);
             if (sel.rangeCount) rect = sel.getRangeAt(0).getBoundingClientRect();
         }
         if (!rect || (rect.top === 0 && rect.left === 0 && rect.bottom === 0 && rect.right === 0)) {
-            var el = document.getElementById('memo-editor') || document.getElementById('memo-edit-memo-editor-{{ id }}');
-            if (el) rect = el.getBoundingClientRect();
+            if (_el) {
+                rect = _el.getBoundingClientRect();
+            } else {
+                var el = document.getElementById('memo-editor');
+                if (el) rect = el.getBoundingClientRect();
+            }
         }
         if (!rect) return;
         menu.style.cssText = 'position: fixed; visibility: hidden; display: block;';

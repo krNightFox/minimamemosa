@@ -98,6 +98,38 @@ const BASE_TEMPLATE: &str = r#"<!DOCTYPE html>
             var saved = localStorage.getItem('accent-theme');
             if (saved && ACCENT_THEMES[saved]) applyAccentTheme(saved, false); else applyAccentTheme('Default', false);
         }
+        function initCodeBlocks() {
+            document.querySelectorAll('.memo-content pre').forEach((pre) => {
+                if (pre.parentElement && pre.parentElement.classList.contains('code-block-wrapper')) return;
+                
+                const wrapper = document.createElement('div');
+                wrapper.className = 'relative group code-block-wrapper';
+                
+                pre.parentNode.insertBefore(wrapper, pre);
+                wrapper.appendChild(pre);
+                
+                const btn = document.createElement('button');
+                btn.className = 'code-wrap-btn absolute top-2 right-2 p-1.5 rounded-md bg-card/80 hover:bg-muted text-muted-fg hover:text-foreground border border-border shadow-sm transition-all focus:outline-none lg:opacity-0 lg:group-hover:opacity-100 focus:opacity-100 z-10';
+                btn.setAttribute('title', 'Toggle Line Wrap');
+                btn.setAttribute('aria-label', 'Toggle Line Wrap');
+                btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h10a4 4 0 010 8h-4m0 0l2-2m-2 2l2 2"/></svg>';
+                
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const isWrapped = pre.classList.toggle('code-wrapped');
+                    if (isWrapped) {
+                        btn.classList.add('bg-accent-50', 'dark:bg-accent-900/20', 'text-accent-600', 'dark:text-accent-500', 'border-accent-200', 'dark:border-accent-800');
+                        btn.classList.remove('bg-card/80', 'text-muted-fg', 'border-border');
+                    } else {
+                        btn.classList.remove('bg-accent-50', 'dark:bg-accent-900/20', 'text-accent-600', 'dark:text-accent-500', 'border-accent-200', 'dark:border-accent-800');
+                        btn.classList.add('bg-card/80', 'text-muted-fg', 'border-border');
+                    }
+                });
+                
+                wrapper.appendChild(btn);
+            });
+        }
         document.addEventListener("DOMContentLoaded", () => {
             var isDark = document.documentElement.classList.contains('dark');
             document.getElementById('hljs-theme').href = isDark 
@@ -110,6 +142,7 @@ const BASE_TEMPLATE: &str = r#"<!DOCTYPE html>
             document.querySelectorAll('pre code').forEach((block) => {
                 hljs.highlightElement(block);
             });
+            initCodeBlocks();
         });
         document.addEventListener('htmx:beforeSend', function() {
             document.getElementById('global-loader').classList.add('active');
@@ -127,6 +160,7 @@ const BASE_TEMPLATE: &str = r#"<!DOCTYPE html>
             document.querySelectorAll('pre code').forEach((block) => {
                 hljs.highlightElement(block);
             });
+            initCodeBlocks();
         });
     </script>
     <style>
@@ -193,6 +227,11 @@ const BASE_TEMPLATE: &str = r#"<!DOCTYPE html>
         .memo-content code { background: var(--muted); padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.8125rem; color: var(--fg); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
         .memo-content pre { background: var(--muted); padding: 0.75rem; border-radius: 0.5rem; overflow-x: auto; margin-bottom: 0.75rem; border: 1px solid var(--border); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
         .memo-content pre code { background: none; padding: 0; color: inherit; }
+        .memo-content pre.code-wrapped,
+        .memo-content pre.code-wrapped code {
+            white-space: pre-wrap !important;
+            word-break: break-all !important;
+        }
         .memo-content blockquote { border-left: 3px solid var(--border); padding-left: 0.75rem; margin: 0.5rem 0; color: var(--muted-fg); }
         .memo-content a { color: var(--a600); text-decoration: none; }
         .memo-content a:hover { text-decoration: underline; }

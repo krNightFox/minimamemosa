@@ -57,6 +57,52 @@ test.describe('Notes & UI Flows', () => {
     expect(contentBox!.width).toBeLessThanOrEqual(timelineBox!.width);
   });
 
+  test('should toggle line wrap on code blocks in the note preview', async ({ page }) => {
+    await waitForTiptap(page);
+    await page.locator('.ProseMirror').first().focus();
+    
+    const longString = 'a'.repeat(200);
+    const markdown = `Code block test:\n\`\`\`javascript\nconst longStr = "${longString}";\n\`\`\``;
+    
+    await page.evaluate((text) => {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', text);
+      const event = new ClipboardEvent('paste', {
+        clipboardData: dt,
+        bubbles: true,
+        cancelable: true
+      });
+      document.querySelector('.ProseMirror')?.dispatchEvent(event);
+    }, markdown);
+
+    await expect(page.locator('#save-memo-btn')).toBeEnabled();
+    await page.click('#save-memo-btn');
+    await page.waitForTimeout(1000);
+
+    const memoContent = page.locator('#timeline [id^="memo-"] .memo-content').first();
+    await expect(memoContent).toBeVisible();
+
+    const wrapper = memoContent.locator('.code-block-wrapper');
+    await expect(wrapper).toBeVisible();
+
+    const preBlock = wrapper.locator('pre');
+    await expect(preBlock).toBeVisible();
+
+    const wrapBtn = wrapper.locator('.code-wrap-btn');
+    await expect(wrapBtn).toBeVisible();
+
+    await expect(preBlock).not.toHaveClass(/code-wrapped/);
+
+    await wrapper.hover();
+    await wrapBtn.click();
+
+    await expect(preBlock).toHaveClass(/code-wrapped/);
+
+    await wrapBtn.click();
+
+    await expect(preBlock).not.toHaveClass(/code-wrapped/);
+  });
+
   test('should create a note with tags', async ({ page }) => {
     await createNote(page, 'This note has #rust and #testing tags');
     await expect(page.locator('#timeline').getByText('note has')).toBeVisible();

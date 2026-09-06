@@ -1597,6 +1597,31 @@ var debouncedLinkSearch = debounce(function(q) { searchLinkMemos(q) }, 200);
 
         localStorage.setItem('sidebar-' + sectionId, isHidden ? 'open' : 'closed');
     }
+    function calContainer(btn) {
+        return btn.closest('#sidebar-calendar, #calendar-section');
+    }
+    function calSearchParam() {
+        var el = document.getElementById('sidebar-search-input');
+        var q = el ? el.value.trim() : '';
+        return q ? '&q=' + encodeURIComponent(q) : '';
+    }
+    function calNav(btn, delta, unit) {
+        var y = parseInt(btn.getAttribute('data-year'), 10);
+        var m = parseInt(btn.getAttribute('data-month'), 10);
+        if (unit === 'month') {
+            m += delta;
+            if (m > 12) { m = 1; y++; } else if (m < 1) { m = 12; y--; }
+        } else {
+            y += delta;
+        }
+        var c = calContainer(btn);
+        if (c) htmx.ajax('GET', '/calendar?year=' + y + '&month=' + m + calSearchParam(), { target: c, swap: 'innerHTML' });
+    }
+    function calToday(btn) {
+        var d = new Date();
+        var c = calContainer(btn);
+        if (c) htmx.ajax('GET', '/calendar?year=' + d.getFullYear() + '&month=' + (d.getMonth() + 1) + calSearchParam(), { target: c, swap: 'innerHTML' });
+    }
     document.addEventListener('DOMContentLoaded', function() {
         ['calendar-section', 'tags-section'].forEach(function(id) {
             var saved = localStorage.getItem('sidebar-' + id);
@@ -1622,11 +1647,6 @@ var debouncedLinkSearch = debounce(function(q) { searchLinkMemos(q) }, 200);
         return fetch('/resources', { method: 'POST', body: fd })
             .then(function(r) { return r.json(); })
             .then(function(data) {
-                if (data.replaced && data.replaced.length) {
-                    for (var j = 0; j < data.replaced.length; j++) {
-                        showToast('"' + data.replaced[j].original_name + '" already exists — replaced', 'info');
-                    }
-                }
                 if (data.resources && data.resources.length) {
                     var ed = targetEditor || window.activeTiptapEditor || window.tiptapEditor;
                     for (var j = 0; j < data.resources.length; j++) {
@@ -1669,11 +1689,6 @@ var debouncedLinkSearch = debounce(function(q) { searchLinkMemos(q) }, 200);
         return fetch('/resources', { method: 'POST', body: fd })
             .then(function(r) { return r.json(); })
             .then(function(data) {
-                if (data.replaced && data.replaced.length) {
-                    for (var j = 0; j < data.replaced.length; j++) {
-                        showToast('"' + data.replaced[j].original_name + '" already exists — replaced', 'info');
-                    }
-                }
                 refreshResourcesPanel();
                 htmx.trigger('body', 'memoUpdated');
             })
@@ -2218,8 +2233,32 @@ const SIDEBAR_TIMELINE_TEMPLATE: &str = r##"<div class="flex flex-col h-full">
          hx-target="this"
          hx-swap="innerHTML"
          hx-include="#sidebar-search-input, #selected-calendar-date">
-        <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center justify-between mb-1">
+            <div class="flex items-center gap-0.5">
+                <button type="button" data-year="{{ year }}" data-month="{{ month }}" onclick="calNav(this,-1,'year')"
+                    class="p-1 rounded-md text-muted-fg hover:text-foreground hover:bg-muted transition-colors" title="Previous year">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/></svg>
+                </button>
+                <button type="button" data-year="{{ year }}" data-month="{{ month }}" onclick="calNav(this,-1,'month')"
+                    class="p-1 rounded-md text-muted-fg hover:text-foreground hover:bg-muted transition-colors" title="Previous month">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                </button>
+            </div>
             <h3 class="text-xs font-semibold text-muted-fg uppercase tracking-wider">{{ month_label }}</h3>
+            <div class="flex items-center gap-0.5">
+                <button type="button" data-year="{{ year }}" data-month="{{ month }}" onclick="calNav(this,1,'month')"
+                    class="p-1 rounded-md text-muted-fg hover:text-foreground hover:bg-muted transition-colors" title="Next month">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                </button>
+                <button type="button" data-year="{{ year }}" data-month="{{ month }}" onclick="calNav(this,1,'year')"
+                    class="p-1 rounded-md text-muted-fg hover:text-foreground hover:bg-muted transition-colors" title="Next year">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+                </button>
+            </div>
+        </div>
+        <div class="flex justify-end mb-1.5">
+            <button type="button" data-year="{{ year }}" data-month="{{ month }}" onclick="calToday(this)"
+                class="px-2 py-0.5 text-[10px] font-medium rounded-md bg-muted text-muted-fg hover:text-foreground transition-colors">Today</button>
         </div>
         <div class="grid grid-cols-7 gap-0.5">
             <div class="col-span-7 grid grid-cols-7 text-center text-xs text-muted-fg font-medium mb-0.5">
@@ -2308,8 +2347,32 @@ const MEMOS_FEED_TEMPLATE: &str = r##"{% for group in memo_groups %}
 </div>
 {% endif %}"##;
 
-const CALENDAR_TEMPLATE: &str = r##"<div class="flex items-center justify-between mb-2">
+const CALENDAR_TEMPLATE: &str = r##"<div class="flex items-center justify-between mb-1">
+    <div class="flex items-center gap-0.5">
+        <button type="button" data-year="{{ year }}" data-month="{{ month }}" onclick="calNav(this,-1,'year')"
+            class="p-1 rounded-md text-muted-fg hover:text-foreground hover:bg-muted transition-colors" title="Previous year">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/></svg>
+        </button>
+        <button type="button" data-year="{{ year }}" data-month="{{ month }}" onclick="calNav(this,-1,'month')"
+            class="p-1 rounded-md text-muted-fg hover:text-foreground hover:bg-muted transition-colors" title="Previous month">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+        </button>
+    </div>
     <h3 class="text-xs font-semibold text-muted-fg uppercase tracking-wider">{{ month_label }}</h3>
+    <div class="flex items-center gap-0.5">
+        <button type="button" data-year="{{ year }}" data-month="{{ month }}" onclick="calNav(this,1,'month')"
+            class="p-1 rounded-md text-muted-fg hover:text-foreground hover:bg-muted transition-colors" title="Next month">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <button type="button" data-year="{{ year }}" data-month="{{ month }}" onclick="calNav(this,1,'year')"
+            class="p-1 rounded-md text-muted-fg hover:text-foreground hover:bg-muted transition-colors" title="Next year">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+        </button>
+    </div>
+</div>
+<div class="flex justify-end mb-1.5">
+    <button type="button" data-year="{{ year }}" data-month="{{ month }}" onclick="calToday(this)"
+        class="px-2 py-0.5 text-[10px] font-medium rounded-md bg-muted text-muted-fg hover:text-foreground transition-colors">Today</button>
 </div>
 <div class="grid grid-cols-7 gap-0.5">
     <div class="col-span-7 grid grid-cols-7 text-center text-xs text-muted-fg font-medium mb-0.5">
@@ -2593,8 +2656,32 @@ const UNIFIED_SIDEBAR_TEMPLATE: &str = r##"<div class="flex flex-col h-full">
              hx-target="this"
              hx-swap="innerHTML"
              hx-include="#sidebar-search-input, #selected-calendar-date">
-            <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center justify-between mb-1">
+                <div class="flex items-center gap-0.5">
+                    <button type="button" data-year="{{ year }}" data-month="{{ month }}" onclick="calNav(this,-1,'year')"
+                        class="p-1 rounded-md text-muted-fg hover:text-foreground hover:bg-muted transition-colors" title="Previous year">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/></svg>
+                    </button>
+                    <button type="button" data-year="{{ year }}" data-month="{{ month }}" onclick="calNav(this,-1,'month')"
+                        class="p-1 rounded-md text-muted-fg hover:text-foreground hover:bg-muted transition-colors" title="Previous month">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                    </button>
+                </div>
                 <h3 class="text-xs font-semibold text-muted-fg uppercase tracking-wider">{{ month_label }}</h3>
+                <div class="flex items-center gap-0.5">
+                    <button type="button" data-year="{{ year }}" data-month="{{ month }}" onclick="calNav(this,1,'month')"
+                        class="p-1 rounded-md text-muted-fg hover:text-foreground hover:bg-muted transition-colors" title="Next month">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </button>
+                    <button type="button" data-year="{{ year }}" data-month="{{ month }}" onclick="calNav(this,1,'year')"
+                        class="p-1 rounded-md text-muted-fg hover:text-foreground hover:bg-muted transition-colors" title="Next year">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="flex justify-end mb-1.5">
+                <button type="button" data-year="{{ year }}" data-month="{{ month }}" onclick="calToday(this)"
+                    class="px-2 py-0.5 text-[10px] font-medium rounded-md bg-muted text-muted-fg hover:text-foreground transition-colors">Today</button>
             </div>
             <div class="grid grid-cols-7 gap-0.5">
                 <div class="col-span-7 grid grid-cols-7 text-center text-xs text-muted-fg font-medium mb-0.5">

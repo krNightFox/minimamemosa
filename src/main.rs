@@ -269,6 +269,19 @@ fn get_month_name(month: u32) -> &'static str {
     }
 }
 
+fn calendar_view(year_str: Option<&str>, month_str: Option<&str>) -> (i32, u32) {
+    let now = chrono::Utc::now();
+    let year = year_str
+        .and_then(|v| v.parse::<i32>().ok())
+        .filter(|y| (1970..=2200).contains(y))
+        .unwrap_or(now.year());
+    let month = month_str
+        .and_then(|v| v.parse::<u32>().ok())
+        .filter(|m| (1..=12).contains(m))
+        .unwrap_or(now.month());
+    (year, month)
+}
+
 fn generate_calendar(year: i32, month: u32, memo_dates: &[String], selected_date: Option<&str>) -> Vec<serde_json::Value> {
     use chrono::Datelike;
     let first_day = chrono::NaiveDate::from_ymd_opt(year, month, 1).unwrap();
@@ -761,7 +774,7 @@ async fn render_app_page(
     };
     let username = user.1.clone();
     let avatar = avatar_char(&username);
-    let limit: i64 = 20;
+    let limit: i64 = 50;
     let memos = state.db.get_memos_paginated(user_id, limit + 1, 0).unwrap_or_default();
     let has_more = memos.len() as i64 > limit;
     let page_memos: Vec<_> = memos.into_iter().take(limit as usize).collect();
@@ -1034,22 +1047,15 @@ async fn post_resources(
     let storage = resource_storage_dir();
     tokio::fs::create_dir_all(&storage).await.ok();
     let mut resources = Vec::new();
-    let mut replaced = Vec::new();
+    let mut used_names: std::collections::HashSet<String> = std::collections::HashSet::new();
     while let Ok(Some(field)) = multipart.next_field().await {
-        let original_name = field.file_name().unwrap_or("file").to_string();
+        let original_name = unique_resource_name(&state.db, user_id, field.file_name().unwrap_or("file"), &mut used_names);
         let mime_type = field.content_type().unwrap_or("application/octet-stream").to_string();
         let data: Bytes = match field.bytes().await {
             Ok(d) => d,
             Err(_) => continue,
         };
         let size = data.len() as i64;
-
-        if let Ok(Some((old_id, old_filename))) = state.db.find_resource_by_original_name(user_id, &original_name) {
-            let old_filepath = storage.join(&old_filename);
-            tokio::fs::remove_file(&old_filepath).await.ok();
-            let _ = state.db.delete_resource(old_id, user_id);
-            replaced.push(json!({"id": old_id, "original_name": &original_name}));
-        }
 
         let ext = std::path::Path::new(&original_name).extension()
             .and_then(|e| e.to_str()).unwrap_or("bin");
@@ -1080,13 +1086,36 @@ async fn post_resources(
             }
         }
     }
-    (StatusCode::OK, Json(json!({"resources": resources, "replaced": replaced}))).into_response()
+    (StatusCode::OK, Json(json!({"resources": resources}))).into_response()
 }
 
 fn uuid_v4() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
     format!("{:016x}{:016x}", (nanos >> 64) as u64, nanos as u64)
+}
+
+fn unique_resource_name(
+    db: &db::Database,
+    user_id: i64,
+    desired: &str,
+    used: &mut std::collections::HashSet<String>,
+) -> String {
+    let base = desired.to_string();
+    let mut name = base.clone();
+    let mut n = 1;
+    while used.contains(&name) || db.find_resource_by_original_name(user_id, &name).ok().flatten().is_some() {
+        n += 1;
+        name = match base.rfind('.') {
+            Some(idx) if idx > 0 => {
+                let (stem, ext) = base.split_at(idx);
+                format!("{}-{}{}", stem, n, ext)
+            }
+            _ => format!("{}-{}", base, n),
+        };
+    }
+    used.insert(name.clone());
+    name
 }
 
 async fn get_resource(
@@ -1219,7 +1248,7 @@ async fn get_resources_feed(
         None => return StatusCode::UNAUTHORIZED.into_response(),
     };
     let offset: i64 = params.get("offset").and_then(|v| v.parse().ok()).unwrap_or(0);
-    let limit: i64 = 30;
+    let limit: i64 = 50;
     let resources = state.db.get_resources_paginated(user_id, limit + 1, offset).unwrap_or_default();
     let has_more = resources.len() as i64 > limit;
     let page: Vec<_> = resources.into_iter().take(limit as usize).collect();
@@ -1299,7 +1328,7 @@ async fn get_notes_panel(
     let username = user.1;
     let avatar = avatar_char(&username);
     let offset: i64 = params.get("offset").and_then(|v| v.parse().ok()).unwrap_or(0);
-    let limit: i64 = 30;
+    let limit: i64 = 50;
     let memos = state.db.get_memos_paginated(user_id, limit + 1, offset).unwrap_or_default();
     let has_more = memos.len() as i64 > limit;
     let page_memos: Vec<_> = memos.into_iter().take(limit as usize).collect();
@@ -1397,7 +1426,7 @@ async fn get_memos_feed(
     };
     let avatar = avatar_char(&user.1);
     let offset: i64 = params.get("offset").and_then(|v| v.parse().ok()).unwrap_or(0);
-    let limit: i64 = 20;
+    let limit: i64 = 50;
     let memos = state.db.get_memos_paginated(user_id, limit + 1, offset).unwrap_or_default();
     let has_more = memos.len() as i64 > limit;
     let page_memos: Vec<_> = memos.into_iter().take(limit as usize).collect();
@@ -1475,9 +1504,7 @@ async fn get_calendar(
         Some(id) => id,
         None => return StatusCode::UNAUTHORIZED.into_response(),
     };
-    let now = chrono::Utc::now();
-    let year = now.year();
-    let month = now.month();
+    let (year, month) = calendar_view(params.get("year").map(|s| s.as_str()), params.get("month").map(|s| s.as_str()));
     let memo_dates = if let Some(q) = params.get("q").filter(|s| !s.is_empty()) {
         state.db.get_memo_dates_in_month_for_query(user_id, year, month, q).unwrap_or_default()
     } else {
@@ -1486,6 +1513,8 @@ async fn get_calendar(
     let selected_date = params.get("selected_date").map(|s| s.as_str());
     let calendar_weeks = generate_calendar(year, month, &memo_dates, selected_date);
     state.templates.render("calendar", &json!({
+        "year": year,
+        "month": month,
         "month_label": format!("{} {}", get_month_name(month), year),
         "calendar_weeks": calendar_weeks,
     })).into_response()
@@ -1507,7 +1536,7 @@ async fn get_unified_sidebar(
     let username = user.1;
     let avatar = avatar_char(&username);
     let offset: i64 = params.get("offset").and_then(|v| v.parse().ok()).unwrap_or(0);
-    let limit: i64 = 30;
+    let limit: i64 = 50;
     let memos = state.db.get_memos_paginated(user_id, limit + 1, offset).unwrap_or_default();
     let has_more = memos.len() as i64 > limit;
     let page_memos: Vec<_> = memos.into_iter().take(limit as usize).collect();
@@ -1553,6 +1582,8 @@ async fn get_unified_sidebar(
         "notes": notes,
         "username": username,
         "avatar": avatar,
+        "year": year,
+        "month": month,
         "month_label": format!("{} {}", get_month_name(month), year),
         "calendar_weeks": calendar_weeks,
         "tags": tag_list,
@@ -2148,6 +2179,44 @@ mod tests {
         assert!(id.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')));
     }
 
+    // ── unique_resource_name Tests ──
+
+    #[test]
+    fn test_unique_resource_name_no_conflict() {
+        let db = db::Database::new(":memory:").unwrap();
+        let uid = db.create_user("t", "h").unwrap();
+        let mut used = std::collections::HashSet::new();
+        assert_eq!(unique_resource_name(&db, uid, "image.png", &mut used), "image.png");
+    }
+
+    #[test]
+    fn test_unique_resource_name_append_suffix() {
+        let db = db::Database::new(":memory:").unwrap();
+        let uid = db.create_user("t", "h").unwrap();
+        db.create_resource(uid, "f1.png", "image.png", "image/png", 1).unwrap();
+        let mut used = std::collections::HashSet::new();
+        assert_eq!(unique_resource_name(&db, uid, "image.png", &mut used), "image-2.png");
+        assert_eq!(unique_resource_name(&db, uid, "image.png", &mut used), "image-3.png");
+    }
+
+    #[test]
+    fn test_unique_resource_name_same_request() {
+        let db = db::Database::new(":memory:").unwrap();
+        let uid = db.create_user("t", "h").unwrap();
+        let mut used = std::collections::HashSet::new();
+        assert_eq!(unique_resource_name(&db, uid, "a.jpg", &mut used), "a.jpg");
+        assert_eq!(unique_resource_name(&db, uid, "a.jpg", &mut used), "a-2.jpg");
+    }
+
+    #[test]
+    fn test_unique_resource_name_no_extension() {
+        let db = db::Database::new(":memory:").unwrap();
+        let uid = db.create_user("t", "h").unwrap();
+        db.create_resource(uid, "f", "clipboard", "application/octet-stream", 1).unwrap();
+        let mut used = std::collections::HashSet::new();
+        assert_eq!(unique_resource_name(&db, uid, "clipboard", &mut used), "clipboard-2");
+    }
+
     // ── get_client_ip Tests ──
 
     #[test]
@@ -2248,6 +2317,185 @@ mod tests {
             w.as_array().unwrap().iter().any(|d| d["is_selected"].as_bool().unwrap_or(false))
         });
         assert!(has_selected);
+    }
+
+    fn flat_days(weeks: &[serde_json::Value]) -> Vec<&serde_json::Value> {
+        weeks.iter().flat_map(|w| w.as_array().unwrap().iter()).collect()
+    }
+
+    #[test]
+    fn test_calendar_view_defaults_to_now() {
+        let now = chrono::Utc::now();
+        let (y, m) = calendar_view(None, None);
+        assert_eq!(y, now.year());
+        assert_eq!(m, now.month());
+    }
+
+    #[test]
+    fn test_calendar_view_valid_year_month() {
+        let (y, m) = calendar_view(Some("2024"), Some("7"));
+        assert_eq!(y, 2024);
+        assert_eq!(m, 7);
+    }
+
+    #[test]
+    fn test_calendar_view_invalid_month_defaults() {
+        let now = chrono::Utc::now();
+        for bad in ["0", "13", "abc", "-1"] {
+            let (y, m) = calendar_view(Some("2024"), Some(bad));
+            assert_eq!(y, 2024, "year kept for month={bad}");
+            assert_eq!(m, now.month(), "month defaulted for {bad}");
+        }
+    }
+
+    #[test]
+    fn test_calendar_view_non_numeric_defaults_to_now() {
+        let now = chrono::Utc::now();
+        let (y, m) = calendar_view(Some("abc"), Some("xyz"));
+        assert_eq!(y, now.year());
+        assert_eq!(m, now.month());
+    }
+
+    #[test]
+    fn test_calendar_view_out_of_range_year_defaults() {
+        let now = chrono::Utc::now();
+        for bad in ["1969", "2201", "-100", "99999"] {
+            let (y, m) = calendar_view(Some(bad), Some("5"));
+            assert_eq!(y, now.year(), "year defaulted for {bad}");
+            assert_eq!(m, 5, "month kept for {bad}");
+        }
+    }
+
+    #[test]
+    fn test_calendar_view_only_month_keeps_current_year() {
+        let now = chrono::Utc::now();
+        let (y, m) = calendar_view(None, Some("12"));
+        assert_eq!(y, now.year());
+        assert_eq!(m, 12);
+    }
+
+    #[test]
+    fn test_calendar_view_only_year_keeps_current_month() {
+        let now = chrono::Utc::now();
+        let (y, m) = calendar_view(Some("2030"), None);
+        assert_eq!(y, 2030);
+        assert_eq!(m, now.month());
+    }
+
+    #[test]
+    fn test_generate_calendar_days_in_month() {
+        let days = |year: i32, month: u32| -> usize {
+            let weeks = generate_calendar(year, month, &[], None);
+            flat_days(&weeks).iter().filter(|d| d["is_current_month"].as_bool().unwrap_or(false)).count()
+        };
+        assert_eq!(days(2024, 2), 29, "2024 is a leap year");
+        assert_eq!(days(2023, 2), 28, "2023 is not a leap year");
+        assert_eq!(days(2024, 4), 30);
+        assert_eq!(days(2024, 1), 31);
+    }
+
+    #[test]
+    fn test_generate_calendar_date_strings() {
+        let weeks = generate_calendar(2024, 1, &[], None);
+        for day in flat_days(&weeks) {
+            let d = day["day"].as_i64().unwrap_or(0);
+            let cur = day["is_current_month"].as_bool().unwrap_or(false);
+            if cur {
+                assert_eq!(day["date"], format!("2024-01-{:02}", d));
+            }
+        }
+    }
+
+    #[test]
+    fn test_generate_calendar_future_year_all_future() {
+        let weeks = generate_calendar(2099, 1, &[], None);
+        for day in flat_days(&weeks) {
+            if day["is_current_month"].as_bool().unwrap_or(false) {
+                assert!(day["is_future"].as_bool().unwrap_or(false), "2099 day should be future");
+            }
+        }
+    }
+
+    #[test]
+    fn test_generate_calendar_past_year_not_future() {
+        let weeks = generate_calendar(2020, 1, &[], None);
+        for day in flat_days(&weeks) {
+            if day["is_current_month"].as_bool().unwrap_or(false) {
+                assert!(!day["is_future"].as_bool().unwrap_or(true), "2020 day should not be future");
+                assert!(!day["is_today"].as_bool().unwrap_or(true), "2020 day is not today");
+            }
+        }
+    }
+
+    #[test]
+    fn test_generate_calendar_is_today_marker() {
+        use chrono::Datelike;
+        let now = chrono::Utc::now();
+        let today = now.format("%Y-%m-%d").to_string();
+        let weeks = generate_calendar(now.year(), now.month(), &[], None);
+        let today_cells: Vec<_> = flat_days(&weeks).into_iter()
+            .filter(|d| d["is_today"].as_bool().unwrap_or(false))
+            .collect();
+        assert_eq!(today_cells.len(), 1, "exactly one today cell");
+        assert_eq!(today_cells[0]["date"], today);
+    }
+
+    #[test]
+    fn test_generate_calendar_january_monday_start_no_padding() {
+        // 2024-01-01 is a Monday
+        let weeks = generate_calendar(2024, 1, &[], None);
+        let first = flat_days(&weeks)[0];
+        assert_eq!(first["day"].as_i64(), Some(1));
+        assert_eq!(first["date"], "2024-01-01");
+        assert!(first["is_current_month"].as_bool().unwrap_or(false));
+    }
+
+    #[test]
+    fn test_generate_calendar_december_sunday_start_padding() {
+        // 2024-12-01 is a Sunday -> 6 leading pad cells
+        let weeks = generate_calendar(2024, 12, &[], None);
+        let days = flat_days(&weeks);
+        assert!(days.len() >= 7);
+        for pad in &days[..6] {
+            assert_eq!(pad["day"].as_i64(), Some(0), "leading cells are padding");
+        }
+        assert_eq!(days[6]["day"].as_i64(), Some(1));
+        assert_eq!(days[6]["date"], "2024-12-01");
+    }
+
+    #[test]
+    fn test_generate_calendar_memo_date_outside_month_ignored() {
+        let weeks = generate_calendar(2024, 1, &["2024-02-15".to_string()], None);
+        let any = flat_days(&weeks).iter()
+            .any(|d| d["has_memos"].as_bool().unwrap_or(false));
+        assert!(!any, "memo in Feb should not mark Jan calendar");
+    }
+
+    #[test]
+    fn test_generate_calendar_selected_exactly_one() {
+        let weeks = generate_calendar(2024, 1, &[], Some("2024-01-15"));
+        let selected: Vec<_> = flat_days(&weeks).into_iter()
+            .filter(|d| d["is_selected"].as_bool().unwrap_or(false))
+            .collect();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0]["date"], "2024-01-15");
+    }
+
+    #[test]
+    fn test_generate_calendar_memo_dates_marked_correct_day() {
+        let weeks = generate_calendar(2024, 1, &["2024-01-05".to_string()], None);
+        let marked: Vec<_> = flat_days(&weeks).into_iter()
+            .filter(|d| d["has_memos"].as_bool().unwrap_or(false))
+            .collect();
+        assert_eq!(marked.len(), 1);
+        assert_eq!(marked[0]["date"], "2024-01-05");
+    }
+
+    #[test]
+    fn test_generate_calendar_invalid_year_panics_none() {
+        // generate_calendar assumes a valid calendar year; 9999 should still work
+        let weeks = generate_calendar(9999, 1, &[], None);
+        assert!(!weeks.is_empty());
     }
 
     // ── process_memo_content Tests (basic without DB) ──

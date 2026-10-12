@@ -24,13 +24,13 @@ base64 = "0.22.1"
 tempfile = "3"
 
 [profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
+opt-level = "3"
+lto = false
+#codegen-units = 1
 panic = "abort"
 strip = true
 
 # Compile dependencies fast without heavy optimizations to speed up Docker builds
-[profile.release.package."*"]
-opt-level = "z"
-codegen-units = 1
+#[profile.release.package."*"]
+#opt-level = "z"
+#codegen-units = 1

@@ -42,4 +42,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: memosa-x86_64-linux-musl
-          path: target/x86_64-unknown-linux-musl/release/
+          path: target/x86_64-unknown-linux-musl/release/minimamemosa

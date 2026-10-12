@@ -22,11 +22,21 @@ jobs:
 
       - name: Build
         run: |
-         sudo apt-get update
-         sudo apt-get install -y musl-tools
-         export CC=musl-gcc
-         export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=rust-lld
-         cargo build --release --target x86_64-unknown-linux-musl
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          export CC=musl-gcc
+          export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=rust-lld
+          cargo build --release --target x86_64-unknown-linux-musl
+
+      - name: Check binary
+        run: |
+          ls -lh target/x86_64-unknown-linux-musl/release/minimamemosa
+          file target/x86_64-unknown-linux-musl/release/minimamemosa
+
+      - name: Manual strip
+        run: |
+          x86_64-linux-musl-strip target/x86_64-unknown-linux-musl/release/minimamemosa || true
+          ls -lh target/x86_64-unknown-linux-musl/release/minimamemosa
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

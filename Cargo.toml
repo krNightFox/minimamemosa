@@ -33,6 +33,6 @@ debug = false
 
 # Compile dependencies fast without heavy optimizations to speed up Docker builds
 [profile.release.package."*"]
-opt-level = s
+opt-level = 3
 strip = true
 codegen-units = 1

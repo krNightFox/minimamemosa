@@ -33,6 +33,5 @@ strip = true
 # Compile dependencies fast without heavy optimizations to speed up Docker builds
 [profile.release.package."*"]
 opt-level = 3
-lto = true
 strip = true
 codegen-units = 1
